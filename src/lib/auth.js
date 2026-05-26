@@ -2,7 +2,7 @@ import { supabase } from './supabase.js'
 
 const REDIRECT_URL = import.meta.env.DEV
   ? 'http://localhost:3001'
-  : 'https://garage-hq.netlify.app'
+  : 'https://garage-hq.stelavance.com'
 
 export async function sendMagicLink(email) {
   const { error } = await supabase.auth.signInWithOtp({
