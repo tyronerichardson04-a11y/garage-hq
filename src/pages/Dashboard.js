@@ -542,7 +542,6 @@ function bindDashboardEvents({ vehicle, tasks, projects, parts, user, refreshApp
 
     const payload = {
       vehicle_id: vehicle.id,
-      owner_id: user.id,
       title,
       project_id: document.getElementById('lr-project').value || null,
       category: document.getElementById('lr-category').value || null,
