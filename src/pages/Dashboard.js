@@ -599,7 +599,7 @@ function bindDashboardEvents({ vehicle, tasks, projects, parts, user, refreshApp
     card.addEventListener('click', () => {
       const pid = card.dataset.projectId
       const project = projects.find(p => p.id === pid)
-      if (project) openProjectPanel(project, tasks, parts, vehicle, user, refreshApp)
+      if (project) openProjectPanel(project, tasks, parts, projects, vehicle, user, refreshApp)
     })
   })
 
@@ -627,7 +627,7 @@ function bindDashboardEvents({ vehicle, tasks, projects, parts, user, refreshApp
 // ─────────────────────────────────────────────────────────────
 //  PROJECT PANEL
 // ─────────────────────────────────────────────────────────────
-async function openProjectPanel(project, allTasks, allParts, vehicle, user, refreshApp) {
+async function openProjectPanel(project, allTasks, allParts, allProjects, vehicle, user, refreshApp) {
   const backdrop = document.getElementById('project-panel-backdrop')
   if (!backdrop) return
   backdrop.classList.remove('hidden')
@@ -712,7 +712,7 @@ async function openProjectPanel(project, allTasks, allParts, vehicle, user, refr
     row.addEventListener('click', () => {
       const tid = row.dataset.taskId
       const task = allTasks.find(t => t.id === tid)
-      if (task) openTaskModal(task, [], refreshApp)
+      if (task) openTaskModal(task, allProjects, refreshApp)
     })
   })
 
@@ -734,7 +734,7 @@ async function openProjectPanel(project, allTasks, allParts, vehicle, user, refr
   // Part status change
   document.querySelectorAll('.part-status-select').forEach(sel => {
     sel.addEventListener('change', async () => {
-      await supabase.from('parts_list').update({ status: sel.value }).eq('id', sel.dataset.partId)
+      await supabase.from('garage_hq_parts_list').update({ status: sel.value }).eq('id', sel.dataset.partId)
       showToast('Part status updated!')
     })
   })
@@ -802,6 +802,13 @@ function openTaskModal(task, projects, refreshApp) {
         </select>
       </div>
     </div>
+    <div class="form-group">
+      <label class="form-label">Link to Project</label>
+      <select id="tm-project">
+        <option value="">— None —</option>
+        ${(projects || []).map(p => `<option value="${p.id}" ${task.project_id===p.id?'selected':''}>${p.title}</option>`).join('')}
+      </select>
+    </div>
     <div class="form-row">
       <div class="form-group" style="margin-bottom:0">
         <label class="form-label">Date Performed</label>
@@ -837,12 +844,25 @@ function openTaskModal(task, projects, refreshApp) {
       </div>
     </div>
   `
+
+  // Inject delete button into footer (left side)
+  const footer = document.querySelector('#task-modal-backdrop .modal-footer')
+  if (footer && !footer.querySelector('#task-modal-delete')) {
+    const deleteBtn = document.createElement('button')
+    deleteBtn.id = 'task-modal-delete'
+    deleteBtn.className = 'btn-danger'
+    deleteBtn.style.marginRight = 'auto'
+    deleteBtn.innerHTML = '<i class="ti ti-trash"></i> Delete'
+    footer.prepend(deleteBtn)
+  }
+
   openModal('task-modal-backdrop')
 
   document.getElementById('task-modal-save').onclick = async () => {
     const { error } = await supabase.from('garage_hq_repair_tasks').update({
       status: document.getElementById('tm-status').value,
       category: document.getElementById('tm-category').value || null,
+      project_id: document.getElementById('tm-project').value || null,
       date_performed: document.getElementById('tm-date').value || null,
       mileage_at_service: parseInt(document.getElementById('tm-mileage').value) || null,
       cost_parts: parseFloat(document.getElementById('tm-cost-parts').value) || 0,
@@ -856,6 +876,17 @@ function openTaskModal(task, projects, refreshApp) {
     if (error) showToast('Error updating task', 'error')
     else {
       showToast('Task updated!')
+      closeModal('task-modal-backdrop')
+      await refreshApp()
+    }
+  }
+
+  document.getElementById('task-modal-delete').onclick = async () => {
+    if (!confirm(`Delete "${task.title}"? This cannot be undone.`)) return
+    const { error } = await supabase.from('garage_hq_repair_tasks').delete().eq('id', task.id)
+    if (error) showToast('Error deleting task', 'error')
+    else {
+      showToast('Task deleted')
       closeModal('task-modal-backdrop')
       await refreshApp()
     }
