@@ -27,17 +27,26 @@ export function priorityBadgeClass(priority) {
   return map[priority] || 'badge-priority-medium'
 }
 
+// Spend on a project = parts + labor of its completed (Done) tasks
+export function projectSpent(project, tasks) {
+  return tasks
+    .filter(t => t.project_id === project.id && t.status === 'Done')
+    .reduce((sum, t) => sum + Number(t.cost_parts || 0) + Number(t.cost_labor || 0), 0)
+}
+
 export function renderProjectCard(project, tasks, parts) {
   const projectTasks = tasks.filter(t => t.project_id === project.id)
   const done = projectTasks.filter(t => t.status === 'Done').length
   const total = projectTasks.length
   const pct = total > 0 ? Math.round((done / total) * 100) : 0
   const partsCount = parts.filter(p => p.project_id === project.id).length
-  const actual = Number(project.actual_cost || 0)
+  const actual = projectSpent(project, tasks)
   const estimated = Number(project.estimated_cost || 0)
+  const overBudget = estimated > 0 && actual > estimated
+  const inactive = !['Planning', 'In Progress'].includes(project.status)
 
   return `
-    <div class="project-card" data-project-id="${project.id}">
+    <div class="project-card${inactive ? ' project-card-inactive' : ''}" data-project-id="${project.id}">
       <div class="project-card-header">
         <div class="project-card-title">${project.title}</div>
       </div>
@@ -51,7 +60,7 @@ export function renderProjectCard(project, tasks, parts) {
       </div>
       <div class="project-card-meta">
         <div class="project-budget">
-          <span class="budget-actual">$${actual.toFixed(0)}</span>
+          <span class="budget-actual"${overBudget ? ' style="color:var(--red)"' : ''}>$${actual.toFixed(0)}</span>
           <span class="budget-of">of</span>
           <span class="budget-estimated">$${estimated.toFixed(0)}</span>
         </div>

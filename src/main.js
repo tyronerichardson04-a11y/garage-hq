@@ -1,5 +1,5 @@
 import { supabase } from './lib/supabase.js'
-import { sendMagicLink, getSession, onAuthChange, getUserDisplayName, getUserInitials } from './lib/auth.js'
+import { sendMagicLink, verifyOtpCode, getSession, onAuthChange, getUserDisplayName, getUserInitials } from './lib/auth.js'
 import { renderSidebar, bindSidebarEvents } from './components/Sidebar.js'
 import { renderDashboard } from './pages/Dashboard.js'
 import { renderSchedule } from './pages/Schedule.js'
@@ -21,6 +21,30 @@ let state = {
 
 const app = document.getElementById('app')
 
+// Track the *visible* viewport height (shrinks when the iPhone keyboard opens)
+// so modals and panels can size to the space above the keyboard.
+function syncViewportHeight() {
+  const vv = window.visualViewport
+  const h = vv ? vv.height : window.innerHeight
+  document.documentElement.style.setProperty('--vvh', `${h}px`)
+  document.documentElement.style.setProperty('--vvtop', `${vv ? vv.offsetTop : 0}px`)
+}
+syncViewportHeight()
+window.visualViewport?.addEventListener('resize', syncViewportHeight)
+window.visualViewport?.addEventListener('scroll', syncViewportHeight)
+window.addEventListener('resize', syncViewportHeight)
+
+// Touch devices: keep the focused field visible above the keyboard
+const isTouch = window.matchMedia('(pointer: coarse)').matches
+document.addEventListener('focusin', (e) => {
+  if (!isTouch || !e.target.matches('input, select, textarea')) return
+  setTimeout(() => e.target.scrollIntoView({ block: 'center', behavior: 'smooth' }), 300)
+})
+
+function setNavOpen(open) {
+  document.querySelector('.app-shell')?.classList.toggle('nav-open', open)
+}
+
 // ─────────────────────────────────────────────────────────────
 //  AUTH FLOW
 // ─────────────────────────────────────────────────────────────
@@ -33,20 +57,28 @@ function renderAuth() {
           <span class="logo-text">Garage HQ</span>
         </div>
         <h2>Sign in</h2>
-        <p>We'll send a magic link to your email.</p>
+        <p id="auth-sub">We'll email you a 6-digit sign-in code.</p>
         <div id="auth-error" class="auth-error" style="display:none"></div>
+
         <div id="auth-form">
           <div class="auth-field">
-            <label>Email address</label>
-            <input type="email" id="auth-email" placeholder="you@example.com" autocomplete="email" />
+            <label for="auth-email">Email address</label>
+            <input type="email" id="auth-email" placeholder="you@example.com" autocomplete="email" inputmode="email" autocapitalize="off" />
           </div>
-          <button class="btn-primary" id="auth-submit">Send Magic Link</button>
+          <button class="btn-primary" id="auth-submit">Send Code</button>
         </div>
-        <div id="auth-confirm" style="display:none">
-          <div class="auth-confirm">
-            <div class="confirm-icon"><i class="ti ti-mail-check"></i></div>
-            <h3>Check your email</h3>
-            <p>We sent a magic link to <strong id="confirm-email"></strong>. Click it to sign in.</p>
+
+        <div id="auth-code-step" style="display:none">
+          <div class="auth-field">
+            <label for="auth-code">6-digit code</label>
+            <input type="text" id="auth-code" class="auth-code-input" inputmode="numeric" pattern="[0-9]*"
+                   autocomplete="one-time-code" maxlength="6" placeholder="••••••" />
+          </div>
+          <button class="btn-primary" id="auth-verify">Sign In</button>
+          <p class="auth-hint">On a computer, you can also just tap the link in the email.</p>
+          <div class="auth-links">
+            <button class="section-link" id="auth-resend" disabled>Resend code (30)</button>
+            <button class="section-link" id="auth-change-email">Use a different email</button>
           </div>
         </div>
       </div>
@@ -55,31 +87,113 @@ function renderAuth() {
 
   const emailInput = document.getElementById('auth-email')
   const submitBtn  = document.getElementById('auth-submit')
+  const codeInput  = document.getElementById('auth-code')
+  const verifyBtn  = document.getElementById('auth-verify')
+  const resendBtn  = document.getElementById('auth-resend')
   const errEl      = document.getElementById('auth-error')
-
-  submitBtn.addEventListener('click', async () => {
-    const email = emailInput.value.trim()
-    if (!email) { showAuthError('Please enter your email.'); return }
-    submitBtn.disabled = true
-    submitBtn.textContent = 'Sending…'
-    try {
-      await sendMagicLink(email)
-      document.getElementById('auth-form').style.display = 'none'
-      document.getElementById('auth-confirm').style.display = 'block'
-      document.getElementById('confirm-email').textContent = email
-    } catch (e) {
-      showAuthError(e.message || 'Something went wrong. Please try again.')
-      submitBtn.disabled = false
-      submitBtn.textContent = 'Send Magic Link'
-    }
-  })
-
-  emailInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') submitBtn.click() })
+  let email = ''
+  let resendTimer = null
 
   function showAuthError(msg) {
     errEl.textContent = msg
     errEl.style.display = 'block'
   }
+  function clearAuthError() { errEl.style.display = 'none' }
+
+  function startResendCountdown() {
+    let left = 30
+    resendBtn.disabled = true
+    resendBtn.textContent = `Resend code (${left})`
+    clearInterval(resendTimer)
+    resendTimer = setInterval(() => {
+      left -= 1
+      if (left <= 0) {
+        clearInterval(resendTimer)
+        resendBtn.disabled = false
+        resendBtn.textContent = 'Resend code'
+      } else {
+        resendBtn.textContent = `Resend code (${left})`
+      }
+    }, 1000)
+  }
+
+  function showCodeStep() {
+    document.getElementById('auth-form').style.display = 'none'
+    document.getElementById('auth-code-step').style.display = 'block'
+    document.getElementById('auth-sub').innerHTML = `Enter the code we sent to <strong></strong>.`
+    document.querySelector('#auth-sub strong').textContent = email
+    codeInput.value = ''
+    codeInput.focus()
+    startResendCountdown()
+  }
+
+  submitBtn.addEventListener('click', async () => {
+    email = emailInput.value.trim()
+    if (!email) { showAuthError('Please enter your email.'); return }
+    clearAuthError()
+    submitBtn.disabled = true
+    submitBtn.textContent = 'Sending…'
+    try {
+      await sendMagicLink(email)
+      showCodeStep()
+    } catch (e) {
+      showAuthError(e.message || 'Something went wrong. Please try again.')
+    } finally {
+      submitBtn.disabled = false
+      submitBtn.textContent = 'Send Code'
+    }
+  })
+  emailInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') submitBtn.click() })
+
+  async function verify() {
+    const code = codeInput.value.replace(/\D/g, '')
+    if (code.length !== 6) { showAuthError('Enter the 6-digit code from the email.'); return }
+    clearAuthError()
+    verifyBtn.disabled = true
+    verifyBtn.textContent = 'Signing in…'
+    try {
+      await verifyOtpCode(email, code)
+      clearInterval(resendTimer)
+      // onAuthChange (SIGNED_IN) renders the app
+    } catch (e) {
+      showAuthError('That code is invalid or expired. Check the latest email or resend.')
+      verifyBtn.disabled = false
+      verifyBtn.textContent = 'Sign In'
+      codeInput.select()
+    }
+  }
+
+  verifyBtn.addEventListener('click', verify)
+  codeInput.addEventListener('input', () => {
+    codeInput.value = codeInput.value.replace(/\D/g, '').slice(0, 6)
+    if (codeInput.value.length === 6) verify()
+  })
+  codeInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') verify() })
+
+  resendBtn.addEventListener('click', async () => {
+    clearAuthError()
+    resendBtn.disabled = true
+    try {
+      await sendMagicLink(email)
+      document.getElementById('auth-sub').innerHTML = `New code sent to <strong></strong>. Use the latest one.`
+      document.querySelector('#auth-sub strong').textContent = email
+      codeInput.value = ''
+      codeInput.focus()
+      startResendCountdown()
+    } catch (e) {
+      showAuthError(e.message || 'Could not resend. Please wait a minute and try again.')
+      resendBtn.disabled = false
+    }
+  })
+
+  document.getElementById('auth-change-email').addEventListener('click', () => {
+    clearInterval(resendTimer)
+    clearAuthError()
+    document.getElementById('auth-code-step').style.display = 'none'
+    document.getElementById('auth-form').style.display = 'block'
+    document.getElementById('auth-sub').textContent = "We'll email you a 6-digit sign-in code."
+    emailInput.focus()
+  })
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -152,9 +266,11 @@ async function renderApp() {
   app.innerHTML = `
     <div class="app-shell">
       <div id="sidebar-mount"></div>
+      <div class="nav-scrim" id="nav-scrim"></div>
       <div class="main-area">
         <div class="topbar">
-          <span style="font-size:15px;font-weight:700;letter-spacing:-0.2px;color:var(--text-primary)">
+          <button class="nav-toggle" id="nav-toggle" aria-label="Open vehicle menu"><i class="ti ti-menu-2"></i></button>
+          <span class="topbar-title">
             ${activeVehicle ? activeVehicle.nickname : 'Garage HQ'}
           </span>
           <div class="topbar-nav">
@@ -197,9 +313,14 @@ async function renderApp() {
       renderApp()
     },
     onAddVehicle: () => {
+      setNavOpen(false)
       document.getElementById('add-vehicle-backdrop').classList.remove('hidden')
     },
   })
+
+  // Phone/tablet: sidebar is a slide-out drawer
+  document.getElementById('nav-toggle')?.addEventListener('click', () => setNavOpen(true))
+  document.getElementById('nav-scrim')?.addEventListener('click', () => setNavOpen(false))
 
   // Bind nav tabs
   document.querySelectorAll('.topbar-tab').forEach(btn => {

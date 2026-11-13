@@ -12,6 +12,14 @@ export async function sendMagicLink(email) {
   if (error) throw error
 }
 
+// The same email carries both the link and a 6-digit code ({{ .Token }} in the
+// Supabase Magic Link template). The code is what makes sign-in work from the
+// home-screen app, since a tapped link opens in Safari with separate storage.
+export async function verifyOtpCode(email, token) {
+  const { error } = await supabase.auth.verifyOtp({ email, token, type: 'email' })
+  if (error) throw error
+}
+
 export async function signOut() {
   await supabase.auth.signOut()
 }

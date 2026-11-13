@@ -1,5 +1,5 @@
 import { supabase } from '../lib/supabase.js'
-import { renderProjectCard, statusBadgeClass, typeBadgeClass, priorityBadgeClass } from '../components/ProjectCard.js'
+import { renderProjectCard, projectSpent, statusBadgeClass, typeBadgeClass, priorityBadgeClass } from '../components/ProjectCard.js'
 import { renderTaskRow } from '../components/TaskRow.js'
 import { renderDueRow, getDueUrgency } from '../components/DueRow.js'
 import { showToast, openModal, closeModal, bindModalClose } from '../components/Modal.js'
@@ -57,6 +57,7 @@ export async function renderDashboard(container, vehicle, user, refreshApp) {
 
   // Stats
   const activeProjects = projects.filter(p => ['Planning', 'In Progress'].includes(p.status))
+  const otherProjects = projects.filter(p => !['Planning', 'In Progress'].includes(p.status))
   const today = new Date(); today.setHours(0, 0, 0, 0)
   const in30 = new Date(today); in30.setDate(today.getDate() + 30)
 
@@ -153,6 +154,17 @@ export async function renderDashboard(container, vehicle, user, refreshApp) {
         <div class="empty-state">No active projects — <button class="section-link" id="btn-add-project-2">start one</button></div>
       </div>
     `}
+
+    ${otherProjects.length > 0 ? `
+      <details class="other-projects">
+        <summary class="section-header">
+          <span class="section-title">Completed &amp; On Hold (${otherProjects.length})</span>
+        </summary>
+        <div class="projects-grid">
+          ${otherProjects.map(p => renderProjectCard(p, tasks, parts)).join('')}
+        </div>
+      </details>
+    ` : ''}
 
     <!-- RECENT TASKS -->
     <div class="section-header">
@@ -640,6 +652,9 @@ async function openProjectPanel(project, allTasks, allParts, allProjects, vehicl
 
   const projectTasks = allTasks.filter(t => t.project_id === project.id)
   const projectParts = allParts.filter(p => p.project_id === project.id)
+  const spent = projectSpent(project, allTasks)
+  const estimated = Number(project.estimated_cost || 0)
+  const isComplete = project.status === 'Complete'
 
   panelBody.innerHTML = `
     <!-- META -->
@@ -658,7 +673,7 @@ async function openProjectPanel(project, allTasks, allParts, allProjects, vehicl
       </div>
       <div class="meta-cell">
         <div class="meta-cell-label">Budget</div>
-        <div class="meta-cell-value">$${Number(project.actual_cost||0).toFixed(0)} / $${Number(project.estimated_cost||0).toFixed(0)}</div>
+        <div class="meta-cell-value"${estimated > 0 && spent > estimated ? ' style="color:var(--red)"' : ''}>$${spent.toFixed(0)} / $${estimated.toFixed(0)}</div>
       </div>
       <div class="meta-cell">
         <div class="meta-cell-label">Target Start</div>
@@ -705,6 +720,16 @@ async function openProjectPanel(project, allTasks, allParts, allProjects, vehicl
     <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:4px">
       <button class="btn-gold" id="panel-save-notes" style="width:auto;padding:8px 16px">Save Notes</button>
     </div>
+
+    <hr class="section-hr" />
+
+    <!-- PROJECT ACTIONS -->
+    <div style="display:flex;justify-content:space-between;gap:8px">
+      <button class="btn-danger" id="panel-delete-project"><i class="ti ti-trash"></i> Delete Project</button>
+      ${isComplete
+        ? `<button class="btn-secondary" id="panel-toggle-complete"><i class="ti ti-arrow-back-up"></i> Reopen Project</button>`
+        : `<button class="btn-gold" id="panel-toggle-complete" style="width:auto;padding:8px 16px"><i class="ti ti-check"></i> Mark Complete</button>`}
+    </div>
   `
 
   // Bind panel events
@@ -729,6 +754,32 @@ async function openProjectPanel(project, allTasks, allParts, allProjects, vehicl
     const { error } = await supabase.from('garage_hq_repair_projects').update({ diagnosis_notes: notes }).eq('id', project.id)
     if (error) showToast('Error saving notes', 'error')
     else showToast('Notes saved!')
+  })
+
+  document.getElementById('panel-toggle-complete')?.addEventListener('click', async () => {
+    const openTasks = projectTasks.filter(t => t.status !== 'Done').length
+    if (!isComplete && openTasks > 0 &&
+        !confirm(`${openTasks} task(s) on this project aren't marked Done. Mark the project complete anyway?`)) return
+    const { error } = await supabase.from('garage_hq_repair_projects').update({
+      status: isComplete ? 'In Progress' : 'Complete',
+      actual_cost: spent,
+      updated_at: new Date().toISOString(),
+    }).eq('id', project.id)
+    if (error) { showToast('Error updating project', 'error'); return }
+    showToast(isComplete ? 'Project reopened' : 'Project marked complete!')
+    backdrop.classList.add('hidden')
+    await refreshApp()
+  })
+
+  document.getElementById('panel-delete-project')?.addEventListener('click', async () => {
+    const msg = `Delete project "${project.title}"? This cannot be undone.\n\n` +
+      `Its parts list will be deleted. Its ${projectTasks.length} task(s) will be kept in your service history, just unlinked from the project.`
+    if (!confirm(msg)) return
+    const { error } = await supabase.from('garage_hq_repair_projects').delete().eq('id', project.id)
+    if (error) { showToast('Error deleting project', 'error'); return }
+    showToast('Project deleted')
+    backdrop.classList.add('hidden')
+    await refreshApp()
   })
 
   // Part status change
