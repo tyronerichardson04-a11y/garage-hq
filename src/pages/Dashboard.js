@@ -381,9 +381,7 @@ function projectPanelHTML() {
     <div class="slide-panel-backdrop hidden" id="project-panel-backdrop">
       <div class="slide-panel">
         <div class="slide-panel-header">
-          <span class="modal-title" id="panel-project-title">Project</span>
-          <button class="modal-close" id="panel-close"><i class="ti ti-x"></i></button>
-        </div>
+          <span class="modal-title" id="panel-project-title">Project</span>        </div>
         <div class="slide-panel-body" id="panel-body">
           <div class="loading-state"><div class="spinner"></div> Loading…</div>
         </div>
@@ -646,7 +644,6 @@ async function openProjectPanel(project, allTasks, allParts, allProjects, vehicl
   backdrop.classList.remove('hidden')
 
   document.getElementById('panel-project-title').textContent = project.title
-  document.getElementById('panel-close').onclick = () => backdrop.classList.add('hidden')
   backdrop.addEventListener('click', (e) => { if (e.target === backdrop) backdrop.classList.add('hidden') })
 
   const panelBody = document.getElementById('panel-body')
