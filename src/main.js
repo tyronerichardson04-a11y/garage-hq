@@ -38,7 +38,27 @@ window.addEventListener('resize', syncViewportHeight)
 const isTouch = window.matchMedia('(pointer: coarse)').matches
 document.addEventListener('focusin', (e) => {
   if (!isTouch || !e.target.matches('input, select, textarea')) return
-  setTimeout(() => e.target.scrollIntoView({ block: 'center', behavior: 'smooth' }), 300)
+  // Scroll only the field's own scroll area. (scrollIntoView would also shift
+  // overflow:hidden parents, pushing the panel header + close button off-screen.)
+  const field = e.target
+  setTimeout(() => {
+    const box = field.closest('.modal-body, .slide-panel-body, .page-content')
+    if (!box) return
+    const f = field.getBoundingClientRect()
+    const b = box.getBoundingClientRect()
+    if (f.top < b.top + 8 || f.bottom > b.bottom - 8) {
+      box.scrollTo({ top: box.scrollTop + (f.top - b.top) - (b.height - f.height) / 2, behavior: 'smooth' })
+    }
+  }, 300)
+})
+
+// Esc closes the top-most open modal/panel (then the nav drawer)
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape') return
+  const open = [...document.querySelectorAll('.modal-backdrop:not(.hidden), .slide-panel-backdrop:not(.hidden)')]
+  const top = open.find(el => el.classList.contains('modal-backdrop')) || open[0]
+  if (top) top.classList.add('hidden')
+  else setNavOpen(false)
 })
 
 function setNavOpen(open) {

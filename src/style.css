@@ -1591,3 +1591,25 @@ hr.section-hr {
   .form-label { margin-bottom: 3px; }
   textarea { min-height: 56px; }
 }
+
+/* Panels/modals must never be scrolled as a whole — only their body scrolls.
+   overflow: clip blocks programmatic/focus scrolling that hid the close button. */
+.modal, .slide-panel { overflow: clip; }
+.modal-backdrop, .slide-panel-backdrop { overscroll-behavior: contain; }
+
+/* Phones: big, easy-to-hit close button */
+@media (max-width: 640px), (max-height: 500px) {
+  .modal-close {
+    min-width: 44px;
+    min-height: 44px;
+    margin: -8px -10px -8px 8px;
+    font-size: 24px;
+    color: var(--text-secondary);
+  }
+  .modal-title, #panel-project-title {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+  }
+}
