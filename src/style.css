@@ -1613,3 +1613,15 @@ hr.section-hr {
     min-width: 0;
   }
 }
+
+/* iPhone: keep full-screen headers below the status bar / notch
+   (env() is 0 on desktop and wherever the OS doesn't overlap content) */
+@media (max-width: 640px), (max-height: 500px) {
+  .modal-header, .slide-panel-header {
+    padding-top: max(12px, calc(env(safe-area-inset-top) + 8px));
+  }
+  #panel-footer { gap: 8px; }
+  #panel-footer button { white-space: nowrap; }
+}
+.topbar { padding-top: env(safe-area-inset-top); height: calc(var(--topbar-height) + env(safe-area-inset-top)); }
+.sidebar-header { padding-top: calc(env(safe-area-inset-top) + 16px); }

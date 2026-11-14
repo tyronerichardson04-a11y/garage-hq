@@ -387,6 +387,7 @@ function projectPanelHTML() {
         <div class="slide-panel-body" id="panel-body">
           <div class="loading-state"><div class="spinner"></div> Loading…</div>
         </div>
+        <div class="modal-footer" id="panel-footer"></div>
       </div>
     </div>
     ${taskModalHTML()}
@@ -720,17 +721,17 @@ async function openProjectPanel(project, allTasks, allParts, allProjects, vehicl
     <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:4px">
       <button class="btn-gold" id="panel-save-notes" style="width:auto;padding:8px 16px">Save Notes</button>
     </div>
-
-    <hr class="section-hr" />
-
-    <!-- PROJECT ACTIONS -->
-    <div style="display:flex;justify-content:space-between;gap:8px">
-      <button class="btn-danger" id="panel-delete-project"><i class="ti ti-trash"></i> Delete Project</button>
-      ${isComplete
-        ? `<button class="btn-secondary" id="panel-toggle-complete"><i class="ti ti-arrow-back-up"></i> Reopen Project</button>`
-        : `<button class="btn-gold" id="panel-toggle-complete" style="width:auto;padding:8px 16px"><i class="ti ti-check"></i> Mark Complete</button>`}
-    </div>
   `
+
+  // Footer (always visible, outside the scrolling body)
+  document.getElementById('panel-footer').innerHTML = `
+    <button class="btn-danger" id="panel-delete-project" style="margin-right:auto"><i class="ti ti-trash"></i> Delete</button>
+    <button class="btn-cancel" id="panel-footer-close">Close</button>
+    ${isComplete
+      ? `<button class="btn-secondary" id="panel-toggle-complete"><i class="ti ti-arrow-back-up"></i> Reopen</button>`
+      : `<button class="btn-gold" id="panel-toggle-complete"><i class="ti ti-check"></i> Mark Complete</button>`}
+  `
+  document.getElementById('panel-footer-close').onclick = () => backdrop.classList.add('hidden')
 
   // Bind panel events
   document.querySelectorAll('#panel-tasks .task-row').forEach(row => {
